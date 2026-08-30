@@ -6,6 +6,7 @@ const {
   ActionRowBuilder, ButtonBuilder, ButtonStyle,
   ContainerBuilder, TextDisplayBuilder, SeparatorBuilder, SeparatorSpacingSize,
   PermissionFlagsBits, ChannelType, Collection,
+  REST, Routes,
 } = require('discord.js');
 
 const client = new Client({
@@ -69,6 +70,26 @@ for (const file of commandFiles) {
   }
 }
 
+// Registers all loaded slash commands with Discord's API.
+// Reuses client.commands (already loaded above) instead of re-reading the
+// commands folder — keeps this in sync automatically whenever a command
+// file is added, edited, or removed.
+async function deployCommands() {
+  const commandData = client.commands.map((command) => command.data.toJSON());
+  const rest = new REST().setToken(process.env.TOKEN);
+
+  try {
+    console.log(`Registering ${commandData.length} slash commands...`);
+    await rest.put(
+      Routes.applicationCommands(process.env.CLIENT_ID),
+      { body: commandData }
+    );
+    console.log('Slash commands registered successfully.');
+  } catch (error) {
+    console.error('Failed to register slash commands:', error);
+  }
+}
+
 function updatePresence() {
   const memberCount = client.guilds.cache.reduce((acc, guild) => acc + guild.memberCount, 0);
 
@@ -88,8 +109,9 @@ function updatePresence() {
   }, 15000);
 }
 
-client.once(Events.ClientReady, (readyClient) => {
+client.once(Events.ClientReady, async (readyClient) => {
   console.log(`Logged in as ${readyClient.user.tag}`);
+  await deployCommands();
   updatePresence();
 });
 
