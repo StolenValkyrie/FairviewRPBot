@@ -46,6 +46,11 @@ const TICKET_TYPES = {
   },
 };
 
+// User IDs blocked from opening any ticket. Add/remove IDs as needed.
+const TICKET_BANNED_USERS = new Set([
+  '1323398308562993270',
+]);
+
 // Tracks which ticket channels have been claimed: channelId -> userId
 const claimedTickets = new Map();
 
@@ -290,6 +295,13 @@ client.on(Events.InteractionCreate, async (interaction) => {
   if (!ticketType.roleId) {
     return interaction.reply({
       content: `The role for "${ticketType.label}" isn't configured yet. Ask an admin to set it up.`,
+      ephemeral: true,
+    });
+  }
+
+  if (TICKET_BANNED_USERS.has(interaction.user.id)) {
+    return interaction.reply({
+      content: 'You are not permitted to open tickets.',
       ephemeral: true,
     });
   }
