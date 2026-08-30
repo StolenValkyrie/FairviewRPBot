@@ -1,18 +1,52 @@
 const {
   SlashCommandBuilder, MessageFlags,
   ContainerBuilder, TextDisplayBuilder, SeparatorBuilder, SeparatorSpacingSize,
+  ActionRowBuilder, ButtonBuilder, ButtonStyle,
 } = require('discord.js');
-const { getServerStatus, sendCommand } = require('../lib/erlc');
+const { SESSION_PING_ROLE_ID } = require('../lib/ssuAnnouncement');
+const { activeBoosts } = require('../lib/state');
 
-// Role pinged when SSU/SSD/session boost commands are run.
-const SESSION_PING_ROLE_ID = '1526164856921919543';
+const DEFAULT_GOAL = 4;
+
+// Builds the vote-tracking card. Exported so index.js can reuse it to
+// update the vote count in place after each click, without duplicating
+// the layout in two files.
+function buildBoostContainer(message, voteCount, goal) {
+  return new ContainerBuilder()
+    .setAccentColor(0xf1c40f)
+    .addTextDisplayComponents(
+      new TextDisplayBuilder().setContent('# 🚀 Session Boost'),
+      new TextDisplayBuilder().setContent(message)
+    )
+    .addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small))
+    .addTextDisplayComponents(
+      new TextDisplayBuilder().setContent(`**Votes:** ${voteCount}/${goal}`)
+    )
+    .addActionRowComponents(
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId('boost_vote')
+          .setLabel('Vote to Boost')
+          .setStyle(ButtonStyle.Success)
+          .setEmoji('🚀')
+      )
+    );
+}
 
 module.exports = {
+  buildBoostContainer,
   data: new SlashCommandBuilder()
     .setName('sessionboost')
-    .setDescription('Ask everyone to hop in and boost the current session')
+    .setDescription('Ask everyone to vote to boost the session')
     .addStringOption((option) =>
       option.setName('message').setDescription('Optional custom message').setRequired(false)
+    )
+    .addIntegerOption((option) =>
+      option
+        .setName('goal')
+        .setDescription(`Votes needed before High Ranking is asked to confirm (default ${DEFAULT_GOAL})`)
+        .setRequired(false)
+        .setMinValue(1)
     ),
 
   async execute(interaction) {
@@ -20,43 +54,17 @@ module.exports = {
       return interaction.reply({ content: 'Only staff can use this command.', flags: MessageFlags.Ephemeral });
     }
 
-    await interaction.deferReply();
-
     const message = interaction.options.getString('message') || 'We need more players — invite your friends and join now!';
+    const goal = interaction.options.getInteger('goal') || DEFAULT_GOAL;
 
-    let status = null;
-    try {
-      status = await getServerStatus();
-      await sendCommand(`:h ${message}`);
-    } catch (error) {
-      console.error('ER:LC API error during /sessionboost:', error);
-    }
-
-    const container = new ContainerBuilder()
-      .setAccentColor(0xf1c40f)
-      .addTextDisplayComponents(
-        new TextDisplayBuilder().setContent(`<@&${SESSION_PING_ROLE_ID}>`),
-        new TextDisplayBuilder().setContent('# 🚀 Session Boost'),
-        new TextDisplayBuilder().setContent(message)
-      )
-      .addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
-
-    if (status) {
-      container.addTextDisplayComponents(
-        new TextDisplayBuilder().setContent(
-          `**Join Code:** \`${status.JoinKey}\`\n**Players:** ${status.CurrentPlayers}/${status.MaxPlayers}`
-        )
-      );
-    } else {
-      container.addTextDisplayComponents(
-        new TextDisplayBuilder().setContent('⚠️ Could not reach the ER:LC API — the in-game announcement may not have sent.')
-      );
-    }
-
-    await interaction.editReply({
-      components: [container],
+    await interaction.reply({
+      content: `<@&${SESSION_PING_ROLE_ID}>`,
+      components: [buildBoostContainer(message, 0, goal)],
       flags: MessageFlags.IsComponentsV2,
       allowedMentions: { roles: [SESSION_PING_ROLE_ID] },
     });
+
+    const sentMessage = await interaction.fetchReply();
+    activeBoosts.set(sentMessage.id, { votes: new Set(), goal, message });
   },
 };
