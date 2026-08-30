@@ -16,7 +16,7 @@ module.exports = {
 
     await interaction.deferReply();
 
-    const message = interaction.options.getString('message') || 'The server is now starting up — come join!';
+    const message = interaction.options.getString('message') || 'The Fairview High Ranking Team have initiated a Server Start Up (SSU)! Join the server using the code: FVRPJ';
     const payload = await buildSsuAnnouncement(message);
 
     await interaction.editReply(payload);
