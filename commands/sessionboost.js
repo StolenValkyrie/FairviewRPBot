@@ -9,8 +9,16 @@ const { activeBoosts } = require('../lib/state');
 const DEFAULT_GOAL = 4;
 
 function buildBoostContainer(message, voteCount, goal, { locked = false } = {}) {
-  return new ContainerBuilder()
-    .setAccentColor(locked ? 0x2ecc71 : 0xf1c40f)
+  const container = new ContainerBuilder()
+    .setAccentColor(locked ? 0x2ecc71 : 0xf1c40f);
+
+  if (SESSION_PING_ROLE_ID) {
+    container.addTextDisplayComponents(
+      new TextDisplayBuilder().setContent(`<@&${SESSION_PING_ROLE_ID}>`)
+    );
+  }
+
+  container
     .addTextDisplayComponents(
       new TextDisplayBuilder().setContent('# 🚀 Session Boost'),
       new TextDisplayBuilder().setContent(message)
@@ -33,6 +41,8 @@ function buildBoostContainer(message, voteCount, goal, { locked = false } = {}) 
           .setDisabled(locked)
       )
     );
+
+  return container;
 }
 
 module.exports = {
@@ -60,10 +70,9 @@ module.exports = {
     const goal = interaction.options.getInteger('goal') || DEFAULT_GOAL;
 
     await interaction.reply({
-      content: `<@&${SESSION_PING_ROLE_ID}>`,
       components: [buildBoostContainer(message, 0, goal)],
       flags: MessageFlags.IsComponentsV2,
-      allowedMentions: { roles: [SESSION_PING_ROLE_ID] },
+      allowedMentions: SESSION_PING_ROLE_ID ? { roles: [SESSION_PING_ROLE_ID] } : undefined,
     });
 
     const sentMessage = await interaction.fetchReply();
