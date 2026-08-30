@@ -8,27 +8,29 @@ const { activeBoosts } = require('../lib/state');
 
 const DEFAULT_GOAL = 4;
 
-// Builds the vote-tracking card. Exported so index.js can reuse it to
-// update the vote count in place after each click, without duplicating
-// the layout in two files.
-function buildBoostContainer(message, voteCount, goal) {
+function buildBoostContainer(message, voteCount, goal, { locked = false } = {}) {
   return new ContainerBuilder()
-    .setAccentColor(0xf1c40f)
+    .setAccentColor(locked ? 0x2ecc71 : 0xf1c40f)
     .addTextDisplayComponents(
       new TextDisplayBuilder().setContent('# 🚀 Session Boost'),
       new TextDisplayBuilder().setContent(message)
     )
     .addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small))
     .addTextDisplayComponents(
-      new TextDisplayBuilder().setContent(`**Votes:** ${voteCount}/${goal}`)
+      new TextDisplayBuilder().setContent(
+        locked
+          ? `**Votes:** ${voteCount}/${goal} — Goal reached! Waiting on High Ranking confirmation.`
+          : `**Votes:** ${voteCount}/${goal}`
+      )
     )
     .addActionRowComponents(
       new ActionRowBuilder().addComponents(
         new ButtonBuilder()
           .setCustomId('boost_vote')
-          .setLabel('Vote to Boost')
-          .setStyle(ButtonStyle.Success)
+          .setLabel(locked ? 'Goal Reached' : 'Vote to Boost')
+          .setStyle(locked ? ButtonStyle.Secondary : ButtonStyle.Success)
           .setEmoji('🚀')
+          .setDisabled(locked)
       )
     );
 }
@@ -65,6 +67,6 @@ module.exports = {
     });
 
     const sentMessage = await interaction.fetchReply();
-    activeBoosts.set(sentMessage.id, { votes: new Set(), goal, message });
+    activeBoosts.set(sentMessage.id, { votes: new Set(), goal, message, triggered: false });
   },
 };
