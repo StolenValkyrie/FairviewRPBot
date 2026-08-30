@@ -83,6 +83,7 @@ Hoisted @𝐗 | Fairview Plus
 ];
 
 module.exports = {
+  MARKETPLACE_ITEMS,
   data: new SlashCommandBuilder()
     .setName('marketplace')
     .setDescription('Post the marketplace browser (visible to everyone in the channel)'),
@@ -143,25 +144,6 @@ module.exports = {
 };
 
 // ---------------------------------------------------------------------------
-// HANDLING THE DROPDOWN SELECTION
-// This part goes in your main bot file (e.g. index.js), inside your existing
-// InteractionCreate listener. Since the marketplace message itself is public,
-// this listens for ANY user selecting an option and replies ephemerally to
-// THAT user only — so everyone can browse independently off the same message.
+// The dropdown selection is handled in index.js's InteractionCreate listener
+// (isStringSelectMenu branch), using the MARKETPLACE_ITEMS exported above.
 // ---------------------------------------------------------------------------
-//
-// client.on('interactionCreate', async (interaction) => {
-//   if (interaction.isStringSelectMenu() && interaction.customId === 'marketplace_select') {
-//     const chosenValue = interaction.values[0];
-//     const item = MARKETPLACE_ITEMS.find((i) => i.value === chosenValue);
-//
-//     const replyContainer = new ContainerBuilder().addTextDisplayComponents(
-//       new TextDisplayBuilder().setContent(item ? item.content : 'Category not found.')
-//     );
-//
-//     await interaction.reply({
-//       components: [replyContainer],
-//       flags: MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral,
-//     });
-//   }
-// });
