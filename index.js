@@ -49,11 +49,17 @@ const TICKET_TYPES = {
 // Tracks which ticket channels have been claimed: channelId -> userId
 const claimedTickets = new Map();
 
-// Helper: find the ticket type config for a given channel, based on its name prefix
+// Tracks which channels are tickets and what type they are: channelId -> ticketType
+// This is set once when the ticket channel is created (see the ticket-open
+// button handler below) and is what f!rename and f!addmember rely on — using
+// channel ID instead of the name prefix means renaming a ticket channel no
+// longer breaks its identification.
+const ticketChannels = new Map();
+
+// Helper: find the ticket type config for a given channel, based on the
+// channelId -> ticketType registry above (populated at ticket creation).
 function getTicketTypeForChannel(channel) {
-  return Object.values(TICKET_TYPES).find(
-    (t) => t.prefix && channel.name.startsWith(`${t.prefix}-`)
-  );
+  return ticketChannels.get(channel.id);
 }
 
 // Load slash commands from the commands folder
@@ -135,11 +141,9 @@ client.on(Events.MessageCreate, async (message) => {
       return message.reply('Usage: `f!rename [new-name]`');
     }
 
-    const isTicketChannel = Object.values(TICKET_TYPES).some(
-      (t) => t.prefix && message.channel.name.startsWith(`${t.prefix}-`)
-    );
+    const ticketType = getTicketTypeForChannel(message.channel);
 
-    if (!isTicketChannel) {
+    if (!ticketType) {
       return message.reply('This command can only be used inside a ticket channel.');
     }
 
@@ -272,6 +276,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
   if (interaction.customId === 'close_ticket') {
     await interaction.reply('Closing this ticket in 5 seconds...');
     claimedTickets.delete(interaction.channel.id);
+    ticketChannels.delete(interaction.channel.id);
     setTimeout(() => {
       interaction.channel.delete().catch(() => {});
     }, 5000);
@@ -307,6 +312,10 @@ client.on(Events.InteractionCreate, async (interaction) => {
       { id: client.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages] },
     ],
   });
+
+  // Register this channel as a ticket by ID, so it's still recognized as
+  // one even after being renamed with f!rename.
+  ticketChannels.set(channel.id, ticketType);
 
   const ticketContainer = new ContainerBuilder()
     .setAccentColor(0x2b2d31)
