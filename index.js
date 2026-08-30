@@ -159,6 +159,23 @@ client.on(Events.MessageCreate, async (message) => {
       );
     }
   }
+  if (command === 'say') {
+    const text = args.join(' ');
+
+    if (!text) {
+      return message.reply('Usage: `f!say [message]`');
+    }
+
+    try {
+      await message.delete();
+    } catch (error) {
+      console.error('Failed to delete f!say trigger message:', error);
+    }
+
+    message.channel.send(text);
+    return;
+  }
+
   if (command === 'addmember') {
     const ticketType = getTicketTypeForChannel(message.channel);
     if (!ticketType) {
