@@ -122,6 +122,33 @@ async function deployCommands() {
   }
 }
 
+// Rebuilds the in-memory ticketChannels registry from each channel's topic
+// (set at creation as "ticket|<typeKey>|<openerId>"). Needed because
+// ticketChannels itself is memory-only and gets wiped on every bot restart —
+// without this, any ticket that was already open before a restart (renamed
+// or not) would stop being recognized by f!claim, f!closerequest, etc.
+function rebuildTicketRegistry() {
+  let restored = 0;
+  for (const guild of client.guilds.cache.values()) {
+    for (const channel of guild.channels.cache.values()) {
+      if (channel.type !== ChannelType.GuildText || !channel.topic) continue;
+
+      const match = channel.topic.match(/^ticket\|([^|]+)\|(\d+)$/);
+      if (!match) continue;
+
+      const [, typeKey, openerId] = match;
+      const ticketType = TICKET_TYPES[typeKey];
+      if (!ticketType) continue;
+
+      ticketChannels.set(channel.id, { ...ticketType, openerId });
+      restored++;
+    }
+  }
+  if (restored > 0) {
+    console.log(`Restored ${restored} ticket channel(s) from their topics.`);
+  }
+}
+
 function updatePresence() {
   const memberCount = client.guilds.cache.reduce((acc, guild) => acc + guild.memberCount, 0);
 
@@ -143,6 +170,7 @@ function updatePresence() {
 
 client.once(Events.ClientReady, async (readyClient) => {
   console.log(`Logged in as ${readyClient.user.tag}`);
+  rebuildTicketRegistry();
   await deployCommands();
   updatePresence();
 });
@@ -444,10 +472,17 @@ client.on(Events.InteractionCreate, async (interaction) => {
     return interaction.reply({ content: `You already have a ticket open: ${existing}`, ephemeral: true });
   }
 
+  // The ticket's type key + opener ID are stored in the channel topic (not
+  // just in memory) so they survive bot restarts — f!rename only changes the
+  // name, never the topic, so this stays intact no matter how the channel
+  // gets renamed later.
+  const ticketTopic = `ticket|${interaction.customId}|${interaction.user.id}`;
+
   const channel = await interaction.guild.channels.create({
     name: `${ticketType.prefix}-${interaction.user.username}`,
     type: ChannelType.GuildText,
     parent: ticketType.categoryId || undefined,
+    topic: ticketTopic,
     permissionOverwrites: [
       { id: interaction.guild.id, deny: [PermissionFlagsBits.ViewChannel] },
       { id: interaction.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] },
