@@ -46,14 +46,46 @@ const TICKET_TYPES = {
   },
 };
 
+// User IDs blocked from opening any ticket. Add/remove IDs as needed.
+const TICKET_BANNED_USERS = new Set([
+  '1323398308562993270',
+]);
+
 // Tracks which ticket channels have been claimed: channelId -> userId
 const claimedTickets = new Map();
 
-// Helper: find the ticket type config for a given channel, based on its name prefix
+// Tracks which channels are tickets and who opened them: channelId -> { ...ticketType, openerId }
+// Set once when the ticket channel is created (see the ticket-open button
+// handler below). f!rename, f!addmember, f!forceclose, and the close-confirm
+// flow all rely on this — using channel ID instead of name prefix means
+// renaming a ticket channel never breaks its identification.
+const ticketChannels = new Map();
+
+// Helper: find the ticket type config for a given channel, based on the
+// channelId -> ticketType registry above (populated at ticket creation).
 function getTicketTypeForChannel(channel) {
-  return Object.values(TICKET_TYPES).find(
-    (t) => t.prefix && channel.name.startsWith(`${t.prefix}-`)
+  return ticketChannels.get(channel.id);
+}
+
+// Helper: posts the "would you like to close this ticket?" prompt with
+// Yes/No buttons, pinging the opener. Shared by the close_ticket button and
+// f!closerequest so both trigger the exact same confirmation flow.
+async function sendCloseRequest(channel, ticketType) {
+  const confirmRow = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId('close_confirm')
+      .setLabel('Yes, close it')
+      .setStyle(ButtonStyle.Danger),
+    new ButtonBuilder()
+      .setCustomId('close_cancel')
+      .setLabel('No, keep it open')
+      .setStyle(ButtonStyle.Secondary)
   );
+
+  await channel.send({
+    content: `<@${ticketType.openerId}>, would you like to close this ticket?`,
+    components: [confirmRow],
+  });
 }
 
 // Load slash commands from the commands folder
@@ -90,6 +122,33 @@ async function deployCommands() {
   }
 }
 
+// Rebuilds the in-memory ticketChannels registry from each channel's topic
+// (set at creation as "ticket|<typeKey>|<openerId>"). Needed because
+// ticketChannels itself is memory-only and gets wiped on every bot restart —
+// without this, any ticket that was already open before a restart (renamed
+// or not) would stop being recognized by f!claim, f!closerequest, etc.
+function rebuildTicketRegistry() {
+  let restored = 0;
+  for (const guild of client.guilds.cache.values()) {
+    for (const channel of guild.channels.cache.values()) {
+      if (channel.type !== ChannelType.GuildText || !channel.topic) continue;
+
+      const match = channel.topic.match(/^ticket\|([^|]+)\|(\d+)$/);
+      if (!match) continue;
+
+      const [, typeKey, openerId] = match;
+      const ticketType = TICKET_TYPES[typeKey];
+      if (!ticketType) continue;
+
+      ticketChannels.set(channel.id, { ...ticketType, openerId });
+      restored++;
+    }
+  }
+  if (restored > 0) {
+    console.log(`Restored ${restored} ticket channel(s) from their topics.`);
+  }
+}
+
 function updatePresence() {
   const memberCount = client.guilds.cache.reduce((acc, guild) => acc + guild.memberCount, 0);
 
@@ -111,6 +170,7 @@ function updatePresence() {
 
 client.once(Events.ClientReady, async (readyClient) => {
   console.log(`Logged in as ${readyClient.user.tag}`);
+  rebuildTicketRegistry();
   await deployCommands();
   updatePresence();
 });
@@ -135,11 +195,9 @@ client.on(Events.MessageCreate, async (message) => {
       return message.reply('Usage: `f!rename [new-name]`');
     }
 
-    const isTicketChannel = Object.values(TICKET_TYPES).some(
-      (t) => t.prefix && message.channel.name.startsWith(`${t.prefix}-`)
-    );
+    const ticketType = getTicketTypeForChannel(message.channel);
 
-    if (!isTicketChannel) {
+    if (!ticketType) {
       return message.reply('This command can only be used inside a ticket channel.');
     }
 
@@ -159,6 +217,115 @@ client.on(Events.MessageCreate, async (message) => {
       );
     }
   }
+  if (command === 'say') {
+    const text = args.join(' ');
+
+    if (!text) {
+      return message.reply('Usage: `f!say [message]`');
+    }
+
+    try {
+      await message.delete();
+    } catch (error) {
+      console.error('Failed to delete f!say trigger message:', error);
+    }
+
+    message.channel.send(text);
+    return;
+  }
+
+  if (command === 'forceclose') {
+    const ticketType = getTicketTypeForChannel(message.channel);
+    if (!ticketType) {
+      return message.reply('This command can only be used inside a ticket channel.');
+    }
+
+    if (!message.member.roles.cache.has(process.env.STAFF_ROLE_ID)) {
+      return message.reply('Only staff can use this command.');
+    }
+
+    await message.reply('🔒 Force closing this ticket in 5 seconds...');
+    ticketChannels.delete(message.channel.id);
+    claimedTickets.delete(message.channel.id);
+    setTimeout(() => {
+      message.channel.delete().catch(() => {});
+    }, 5000);
+    return;
+  }
+
+  if (command === 'closerequest') {
+    const ticketType = getTicketTypeForChannel(message.channel);
+    if (!ticketType) {
+      return message.reply('This command can only be used inside a ticket channel.');
+    }
+
+    if (message.author.id !== ticketType.openerId) {
+      return message.reply('Only the ticket opener can request to close this ticket. Staff can use `f!forceclose` if needed.');
+    }
+
+    await sendCloseRequest(message.channel, ticketType);
+    return;
+  }
+
+  if (command === 'claim') {
+    const ticketType = getTicketTypeForChannel(message.channel);
+    if (!ticketType) {
+      return message.reply('This command can only be used inside a ticket channel.');
+    }
+
+    if (!message.member.roles.cache.has(ticketType.roleId)) {
+      return message.reply(`Only members of the ${ticketType.label} team can claim this ticket.`);
+    }
+
+    const existingClaim = claimedTickets.get(message.channel.id);
+    if (existingClaim) {
+      return message.reply(`This ticket is already claimed by <@${existingClaim}>.`);
+    }
+
+    claimedTickets.set(message.channel.id, message.author.id);
+    await message.reply(`✋ Ticket claimed by ${message.author}.`);
+    return;
+  }
+
+  if (command === 'unclaim') {
+    const ticketType = getTicketTypeForChannel(message.channel);
+    if (!ticketType) {
+      return message.reply('This command can only be used inside a ticket channel.');
+    }
+
+    const existingClaim = claimedTickets.get(message.channel.id);
+    if (!existingClaim) {
+      return message.reply('This ticket is not currently claimed.');
+    }
+
+    if (existingClaim !== message.author.id) {
+      return message.reply(`This ticket is claimed by <@${existingClaim}> — only they can unclaim it. Staff can use \`f!forceunclaim\`.`);
+    }
+
+    claimedTickets.delete(message.channel.id);
+    await message.reply('Ticket unclaimed.');
+    return;
+  }
+
+  if (command === 'forceunclaim') {
+    const ticketType = getTicketTypeForChannel(message.channel);
+    if (!ticketType) {
+      return message.reply('This command can only be used inside a ticket channel.');
+    }
+
+    if (!message.member.roles.cache.has(process.env.STAFF_ROLE_ID)) {
+      return message.reply('Only staff can use this command.');
+    }
+
+    if (!claimedTickets.has(message.channel.id)) {
+      return message.reply('This ticket is not currently claimed.');
+    }
+
+    claimedTickets.delete(message.channel.id);
+    await message.reply('🔓 Ticket forcibly unclaimed.');
+    return;
+  }
+
   if (command === 'addmember') {
     const ticketType = getTicketTypeForChannel(message.channel);
     if (!ticketType) {
@@ -205,40 +372,78 @@ client.on(Events.InteractionCreate, async (interaction) => {
     return;
   }
 
-  if (!interaction.isButton()) return;
+  if (interaction.isStringSelectMenu()) {
+    if (interaction.customId === 'marketplace_select') {
+      const marketplaceCommand = client.commands.get('marketplace');
+      const item = marketplaceCommand?.MARKETPLACE_ITEMS.find(
+        (i) => i.value === interaction.values[0]
+      );
 
-  // Claim ticket button
-  if (interaction.customId === 'claim_ticket') {
-    const ticketType = getTicketTypeForChannel(interaction.channel);
-    if (!ticketType) return;
+      const replyContainer = new ContainerBuilder().addTextDisplayComponents(
+        new TextDisplayBuilder().setContent(item ? item.content : 'Category not found.')
+      );
 
-    if (!interaction.member.roles.cache.has(ticketType.roleId)) {
-      return interaction.reply({
-        content: `Only members of the ${ticketType.label} team can claim this ticket.`,
-        ephemeral: true,
+      await interaction.reply({
+        components: [replyContainer],
+        flags: MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral,
       });
     }
-
-    const existingClaim = claimedTickets.get(interaction.channel.id);
-    if (existingClaim) {
-      return interaction.reply({
-        content: `This ticket is already claimed by <@${existingClaim}>.`,
-        ephemeral: true,
-      });
-    }
-
-    claimedTickets.set(interaction.channel.id, interaction.user.id);
-    await interaction.reply(`✋ Ticket claimed by ${interaction.user}.`);
     return;
   }
 
-  // Close ticket button
+  if (!interaction.isButton()) return;
+
+  // Close ticket button — pings the opener to confirm instead of closing immediately
   if (interaction.customId === 'close_ticket') {
+    const ticketType = getTicketTypeForChannel(interaction.channel);
+    if (!ticketType) return;
+
+    if (interaction.user.id !== ticketType.openerId) {
+      return interaction.reply({
+        content: 'Only the ticket opener can close this ticket. Staff can use `f!forceclose` if needed.',
+        ephemeral: true,
+      });
+    }
+
+    await interaction.deferUpdate();
+    await sendCloseRequest(interaction.channel, ticketType);
+    return;
+  }
+
+  // Opener confirms the close
+  if (interaction.customId === 'close_confirm') {
+    const ticketType = getTicketTypeForChannel(interaction.channel);
+    if (!ticketType) return;
+
+    if (interaction.user.id !== ticketType.openerId) {
+      return interaction.reply({
+        content: 'Only the ticket opener can respond to this.',
+        ephemeral: true,
+      });
+    }
+
     await interaction.reply('Closing this ticket in 5 seconds...');
+    ticketChannels.delete(interaction.channel.id);
     claimedTickets.delete(interaction.channel.id);
     setTimeout(() => {
       interaction.channel.delete().catch(() => {});
     }, 5000);
+    return;
+  }
+
+  // Opener declines the close
+  if (interaction.customId === 'close_cancel') {
+    const ticketType = getTicketTypeForChannel(interaction.channel);
+    if (!ticketType) return;
+
+    if (interaction.user.id !== ticketType.openerId) {
+      return interaction.reply({
+        content: 'Only the ticket opener can respond to this.',
+        ephemeral: true,
+      });
+    }
+
+    await interaction.reply('Alright, this ticket will stay open.');
     return;
   }
 
@@ -253,6 +458,13 @@ client.on(Events.InteractionCreate, async (interaction) => {
     });
   }
 
+  if (TICKET_BANNED_USERS.has(interaction.user.id)) {
+    return interaction.reply({
+      content: 'You are not permitted to open tickets.',
+      ephemeral: true,
+    });
+  }
+
   const existing = interaction.guild.channels.cache.find(
     (c) => c.name === `${ticketType.prefix}-${interaction.user.username.toLowerCase()}`
   );
@@ -260,10 +472,17 @@ client.on(Events.InteractionCreate, async (interaction) => {
     return interaction.reply({ content: `You already have a ticket open: ${existing}`, ephemeral: true });
   }
 
+  // The ticket's type key + opener ID are stored in the channel topic (not
+  // just in memory) so they survive bot restarts — f!rename only changes the
+  // name, never the topic, so this stays intact no matter how the channel
+  // gets renamed later.
+  const ticketTopic = `ticket|${interaction.customId}|${interaction.user.id}`;
+
   const channel = await interaction.guild.channels.create({
     name: `${ticketType.prefix}-${interaction.user.username}`,
     type: ChannelType.GuildText,
     parent: ticketType.categoryId || undefined,
+    topic: ticketTopic,
     permissionOverwrites: [
       { id: interaction.guild.id, deny: [PermissionFlagsBits.ViewChannel] },
       { id: interaction.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] },
@@ -271,6 +490,10 @@ client.on(Events.InteractionCreate, async (interaction) => {
       { id: client.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages] },
     ],
   });
+
+  // Register this channel as a ticket by ID (plus who opened it), so it's
+  // still recognized as one even after being renamed with f!rename.
+  ticketChannels.set(channel.id, { ...ticketType, openerId: interaction.user.id });
 
   const ticketContainer = new ContainerBuilder()
     .setAccentColor(0x2b2d31)
@@ -287,11 +510,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
     )
     .addActionRowComponents(
       new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId('claim_ticket')
-          .setLabel('Claim Ticket')
-          .setStyle(ButtonStyle.Success)
-          .setEmoji('✋'),
         new ButtonBuilder()
           .setCustomId('close_ticket')
           .setLabel('Close Ticket')
