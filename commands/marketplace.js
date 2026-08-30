@@ -5,6 +5,7 @@ const {
   ContainerBuilder,
   TextDisplayBuilder,
   SeparatorBuilder,
+  MediaGalleryBuilder,
   MessageFlags,
 } = require('discord.js');
 
@@ -84,7 +85,7 @@ Hoisted @𝐗 | Fairview Plus
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('marketplace')
-    .setDescription('Browse the marketplace by category'),
+    .setDescription('Post the marketplace browser (visible to everyone in the channel)'),
 
   async execute(interaction) {
     const select = new StringSelectMenuBuilder()
@@ -105,20 +106,14 @@ module.exports = {
     // components inside a Container — there's no separate `embeds` field.
     const container = new ContainerBuilder()
       .setAccentColor(0x5865f2)
-
       .addMediaGalleryComponents(
-        new MediaGalleryBuilder().setMediaItems([
-          {
-            type: 'image',
-            url: 'https://cdn.phototourl.com/free/2026-08-30-bd68f618-74fa-4d03-8ab7-47ecc70d8b9b.png'
-          }
-        ])
+        new MediaGalleryBuilder().addItems({
+          media: { url: 'https://cdn.phototourl.com/free/2026-08-30-bd68f618-74fa-4d03-8ab7-47ecc70d8b9b.png' },
+        })
       )
-
       .addSeparatorComponents(
         new SeparatorBuilder().setSpacing(2) // 2 = Large spacing
       )
-
       .addTextDisplayComponents(
         new TextDisplayBuilder().setContent('## 🛒 Marketplace'),
         new TextDisplayBuilder().setContent('Select a category below to browse items.')
@@ -127,25 +122,22 @@ module.exports = {
         new SeparatorBuilder().setSpacing(2) // 2 = Large spacing
       )
       .addActionRowComponents(row)
-
       .addSeparatorComponents(
         new SeparatorBuilder().setSpacing(2) // 2 = Large spacing
       )
-
       .addMediaGalleryComponents(
-        new MediaGalleryBuilder().setMediaItems([
-          {
-            type: 'image',
-            url: 'https://cdn.phototourl.com/free/2026-08-30-1c0da88b-36b4-4a71-945e-cbd73f745df1.png'
-          }
-        ])
+        new MediaGalleryBuilder().addItems({
+          media: { url: 'https://cdn.phototourl.com/free/2026-08-30-1c0da88b-36b4-4a71-945e-cbd73f745df1.png' },
+        })
       );
 
+    // Posted PUBLICLY (no Ephemeral flag) so it stays in the channel and
+    // anyone can use the dropdown — not tied to whoever ran the command.
+    // IsComponentsV2 is still required whenever sending Container/TextDisplay
+    // components, ephemeral or not.
     await interaction.reply({
       components: [container],
-      // IsComponentsV2 is required whenever you send Container/TextDisplay
-      // components; Ephemeral (64) keeps the reply visible only to the user.
-      flags: MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral,
+      flags: MessageFlags.IsComponentsV2,
     });
   },
 };
@@ -153,8 +145,9 @@ module.exports = {
 // ---------------------------------------------------------------------------
 // HANDLING THE DROPDOWN SELECTION
 // This part goes in your main bot file (e.g. index.js), inside your existing
-// InteractionCreate listener. It listens for the select menu being used and
-// replies ephemerally with the matching category's content.
+// InteractionCreate listener. Since the marketplace message itself is public,
+// this listens for ANY user selecting an option and replies ephemerally to
+// THAT user only — so everyone can browse independently off the same message.
 // ---------------------------------------------------------------------------
 //
 // client.on('interactionCreate', async (interaction) => {
