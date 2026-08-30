@@ -205,6 +205,25 @@ client.on(Events.InteractionCreate, async (interaction) => {
     return;
   }
 
+  if (interaction.isStringSelectMenu()) {
+    if (interaction.customId === 'marketplace_select') {
+      const marketplaceCommand = client.commands.get('marketplace');
+      const item = marketplaceCommand?.MARKETPLACE_ITEMS.find(
+        (i) => i.value === interaction.values[0]
+      );
+
+      const replyContainer = new ContainerBuilder().addTextDisplayComponents(
+        new TextDisplayBuilder().setContent(item ? item.content : 'Category not found.')
+      );
+
+      await interaction.reply({
+        components: [replyContainer],
+        flags: MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral,
+      });
+    }
+    return;
+  }
+
   if (!interaction.isButton()) return;
 
   // Claim ticket button
