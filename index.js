@@ -1,401 +1,156 @@
-require('dotenv').config();
-const fs = require('node:fs');
-const path = require('node:path');
 const {
-  Client, GatewayIntentBits, Events, ActivityType, MessageFlags,
-  ActionRowBuilder, ButtonBuilder, ButtonStyle,
-  ContainerBuilder, TextDisplayBuilder, SeparatorBuilder, SeparatorSpacingSize,
-  PermissionFlagsBits, ChannelType, Collection,
-  REST, Routes,
+  SlashCommandBuilder,
+  ActionRowBuilder,
+  StringSelectMenuBuilder,
+  ContainerBuilder,
+  TextDisplayBuilder,
+  SeparatorBuilder,
+  MediaGalleryBuilder,
+  MessageFlags,
 } = require('discord.js');
 
-const client = new Client({
-  intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent,
-  ],
-});
+// ---------------------------------------------------------------------------
+// CONFIG: edit this to add/remove/change your marketplace categories.
+// Each entry needs a unique `value` (used internally), a `label` (shown in
+// the dropdown), and whatever `content` you want shown when it's picked.
+// ---------------------------------------------------------------------------
+const MARKETPLACE_ITEMS = [
+  {
+    value: 'paid_ads',
+    label: 'Paid Advertisements',
+    description: 'Everyone/here pings, sponsored giveaways, instant postage',
+    emoji: '📢',
+    content: `**Paid Advertisements**
+\`@everyone Paid Advertisement\`
+[450 Robux](https://www.roblox.com/game-pass/1963807218/Everyone-Ping)
 
-// Ticket type config — one entry per button, keyed by its customId
-// Anyone can open any ticket type; only the matching role + opener can view it
-const TICKET_TYPES = {
-  ticket_general_support: {
-    label: 'General Support',
-    prefix: 'support',
-    roleId: process.env.SUPPORT_STAFF_ROLE,
-    categoryId: '1540904527744729189',
+\`@here Paid Advertisement\`
+[250 Robux](https://www.roblox.com/game-pass/1962067180/Here-Ping)
+
+\`Sponsored Giveaway\`
+[300 Robux](https://www.roblox.com/game-pass/1964113217/SPGW)
+
+**Instant Postage**
+\`Instant Postage\`
+[1000 Robux](https://www.roblox.com/game-pass/1964065208/Instant-Postage)`,
   },
-  ticket_high_ranking: {
-    label: 'High Ranking',
-    prefix: 'highranking',
-    roleId: process.env.HIGH_RANKING_TEAM,
-    categoryId: '1543499607047278713',
+  {
+    value: 'premium_membership',
+    label: 'Fairview Premium Membership',
+    description: 'Top-tier perks: electric & prestige cars, premium role, and more',
+    emoji: '💎',
+    content: `**Fairview Plus Membership**
+Take your Fairview Roleplay experience to the next level with Plus Membership! Enjoy exclusive perks, additional benefits, and special features as a thank-you for supporting our community. Check out everything included with your Plus Membership below and see what extra benefits await you. Regular purchasing terms and conditions apply.
+--------------------------------------------------------------------------------------------------------------------------------------------------------------
+**Fairview Premium Perks**
+Hoisted @𝐗 | Fairview Premium
+• Access to Electric & Prestige Cars!
+• No Slowmode in any channel!
+• GIF & File Perms anywhere!
+• Premium Chat!
+• Premium Giveaways!
+• Special Premuim Events!
+• Fairview Premium Role!
+• Add 2 emojis of Your Choice!
+• Add 1 Sticker of Your Choice!
+• Shout out upon purchasing!
+• Luke's Office Key!
+• $150,000 In Economy upon purchase!
+• VC Streaming & Soundboard Perms
+• Permission to send external emojis and stickers anywhere!`,
   },
-  ticket_directors_board: {
-    label: 'Directors Board',
-    prefix: 'directors',
-    roleId: process.env.DIRECTORS_BOARD,
-    categoryId: '1540904690127216661',
+  {
+    value: 'plus_membership',
+    label: 'Fairview Plus Membership',
+    description: 'Mid-tier perks: electric cars, no slowmode, plus giveaways',
+    emoji: '⭐',
+    content: `**Fairview Plus Membership**
+Take your Fairview Roleplay experience to the next level with Plus Membership! Enjoy exclusive perks, additional benefits, and special features as a thank-you for supporting our community. Check out everything included with your Plus Membership below and see what extra benefits await you. Regular purchasing terms and conditions apply.
+--------------------------------------------------------------------------------------------------------------------------------------------------------------
+**Fairview Premium Perks**
+Hoisted @𝐗 | Fairview Plus
+• Access to Electric Cars!
+• No Slowmode in any channel!
+• GIF & File Perms anywhere!
+• Premium Chat!
+• Plus Giveaways!
+• Add 1 Sticker of Your Choice!
+• Shout out upon purchasing!
+• $75,000 In Economy upon purchase!
+• VC Streaming & Soundboard Perms
+• Permission to send external emojis and stickers anywhere!`,
   },
-  ticket_ia: {
-    label: 'IA',
-    prefix: 'ia',
-    roleId: process.env.IA_ROLE,
-    categoryId: '1540904579292471336',
+];
+
+module.exports = {
+  MARKETPLACE_ITEMS,
+  data: new SlashCommandBuilder()
+    .setName('marketplace')
+    .setDescription('Post the marketplace browser (visible to everyone in the channel)'),
+
+  async execute(interaction) {
+    if (!interaction.member.roles.cache.has(process.env.STAFF_ROLE_ID)) {
+      return interaction.reply({
+        content: 'Only staff can use this command.',
+        flags: MessageFlags.Ephemeral,
+      });
+    }
+
+    const select = new StringSelectMenuBuilder()
+      .setCustomId('marketplace_select')
+      .setPlaceholder('Choose a category...')
+      .addOptions(
+        MARKETPLACE_ITEMS.map((item) => ({
+          label: item.label,
+          description: item.description,
+          value: item.value,
+          emoji: item.emoji,
+        }))
+      );
+
+    const row = new ActionRowBuilder().addComponents(select);
+
+    // Components V2: everything (title, description, dropdown) is built as
+    // components inside a Container — there's no separate `embeds` field.
+    const container = new ContainerBuilder()
+      .setAccentColor(0x5865f2)
+      .addMediaGalleryComponents(
+        new MediaGalleryBuilder().addItems({
+          media: { url: 'https://cdn.phototourl.com/free/2026-08-30-bd68f618-74fa-4d03-8ab7-47ecc70d8b9b.png' },
+        })
+      )
+      .addSeparatorComponents(
+        new SeparatorBuilder().setSpacing(2) // 2 = Large spacing
+      )
+      .addTextDisplayComponents(
+        new TextDisplayBuilder().setContent('## 🛒 Marketplace'),
+        new TextDisplayBuilder().setContent('Select a category below to browse items.')
+      )
+      .addSeparatorComponents(
+        new SeparatorBuilder().setSpacing(2) // 2 = Large spacing
+      )
+      .addActionRowComponents(row)
+      .addSeparatorComponents(
+        new SeparatorBuilder().setSpacing(2) // 2 = Large spacing
+      )
+      .addMediaGalleryComponents(
+        new MediaGalleryBuilder().addItems({
+          media: { url: 'https://cdn.phototourl.com/free/2026-08-30-1c0da88b-36b4-4a71-945e-cbd73f745df1.png' },
+        })
+      );
+
+    // Posted PUBLICLY (no Ephemeral flag) so it stays in the channel and
+    // anyone can use the dropdown — not tied to whoever ran the command.
+    // IsComponentsV2 is still required whenever sending Container/TextDisplay
+    // components, ephemeral or not.
+    await interaction.reply({
+      components: [container],
+      flags: MessageFlags.IsComponentsV2,
+    });
   },
 };
 
-// User IDs blocked from opening any ticket. Add/remove IDs as needed.
-const TICKET_BANNED_USERS = new Set([
-  '1323398308562993270',
-]);
-
-// Tracks which channels are tickets and who opened them: channelId -> { ...ticketType, openerId }
-// Set once when the ticket channel is created (see the ticket-open button
-// handler below). f!rename, f!addmember, f!forceclose, and the close-confirm
-// flow all rely on this — using channel ID instead of name prefix means
-// renaming a ticket channel never breaks its identification.
-const ticketChannels = new Map();
-
-// Helper: find the ticket type config for a given channel, based on the
-// channelId -> ticketType registry above (populated at ticket creation).
-function getTicketTypeForChannel(channel) {
-  return ticketChannels.get(channel.id);
-}
-
-// Load slash commands from the commands folder
-client.commands = new Collection();
-const commandsPath = path.join(__dirname, 'commands');
-const commandFiles = fs.readdirSync(commandsPath).filter((file) => file.endsWith('.js'));
-
-for (const file of commandFiles) {
-  const command = require(path.join(commandsPath, file));
-  if ('data' in command && 'execute' in command) {
-    client.commands.set(command.data.name, command);
-  } else {
-    console.log(`[WARNING] ${file} is missing "data" or "execute".`);
-  }
-}
-
-// Registers all loaded slash commands with Discord's API.
-// Reuses client.commands (already loaded above) instead of re-reading the
-// commands folder — keeps this in sync automatically whenever a command
-// file is added, edited, or removed.
-async function deployCommands() {
-  const commandData = client.commands.map((command) => command.data.toJSON());
-  const rest = new REST().setToken(process.env.TOKEN);
-
-  try {
-    console.log(`Registering ${commandData.length} slash commands...`);
-    await rest.put(
-      Routes.applicationCommands(process.env.CLIENT_ID),
-      { body: commandData }
-    );
-    console.log('Slash commands registered successfully.');
-  } catch (error) {
-    console.error('Failed to register slash commands:', error);
-  }
-}
-
-function updatePresence() {
-  const memberCount = client.guilds.cache.reduce((acc, guild) => acc + guild.memberCount, 0);
-
-  const statuses = [
-    { name: 'Managing Fairview Roleplay', type: ActivityType.Playing },
-    { name: `over ${memberCount} members`, type: ActivityType.Watching },
-  ];
-
-  let index = 0;
-  client.user.setActivity(statuses[index].name, { type: statuses[index].type });
-
-  setInterval(() => {
-    index = (index + 1) % statuses.length;
-    const currentCount = client.guilds.cache.reduce((acc, guild) => acc + guild.memberCount, 0);
-    statuses[1].name = `over ${currentCount} members`;
-    client.user.setActivity(statuses[index].name, { type: statuses[index].type });
-  }, 15000);
-}
-
-client.once(Events.ClientReady, async (readyClient) => {
-  console.log(`Logged in as ${readyClient.user.tag}`);
-  await deployCommands();
-  updatePresence();
-});
-
-// Text commands (f!)
-client.on(Events.MessageCreate, async (message) => {
-  if (message.author.bot) return;
-  if (!message.content.startsWith('f!')) return;
-
-  const args = message.content.slice(2).trim().split(/\s+/);
-  const command = args.shift().toLowerCase();
-
-  if (command === 'ping') {
-    message.reply('Pong!');
-    return;
-  }
-
-  if (command === 'rename') {
-    const newName = args.join('-');
-
-    if (!newName) {
-      return message.reply('Usage: `f!rename [new-name]`');
-    }
-
-    const ticketType = getTicketTypeForChannel(message.channel);
-
-    if (!ticketType) {
-      return message.reply('This command can only be used inside a ticket channel.');
-    }
-
-    try {
-      const oldName = message.channel.name;
-      await message.channel.setName(newName.toLowerCase());
-      await message.reply(
-        `✅ Renamed \`${oldName}\` → \`${newName.toLowerCase()}\`.\n` +
-        `⚠️ **Heads up for staff:** Discord only allows **2 channel renames per 10 minutes** per channel. ` +
-        `If you rename again too soon it will fail temporarily — wait a bit before trying again.`
-      );
-    } catch (error) {
-      console.error(error);
-      message.reply(
-        `⚠️ Failed to rename the channel — this is likely Discord's rate limit ` +
-        `(**2 renames per 10 minutes** per channel). Wait a few minutes and try again.`
-      );
-    }
-  }
-  if (command === 'say') {
-    const text = args.join(' ');
-
-    if (!text) {
-      return message.reply('Usage: `f!say [message]`');
-    }
-
-    try {
-      await message.delete();
-    } catch (error) {
-      console.error('Failed to delete f!say trigger message:', error);
-    }
-
-    message.channel.send(text);
-    return;
-  }
-
-  if (command === 'forceclose') {
-    const ticketType = getTicketTypeForChannel(message.channel);
-    if (!ticketType) {
-      return message.reply('This command can only be used inside a ticket channel.');
-    }
-
-    if (!message.member.roles.cache.has(process.env.STAFF_ROLE_ID)) {
-      return message.reply('Only staff can use this command.');
-    }
-
-    await message.reply('🔒 Force closing this ticket in 5 seconds...');
-    ticketChannels.delete(message.channel.id);
-    setTimeout(() => {
-      message.channel.delete().catch(() => {});
-    }, 5000);
-    return;
-  }
-
-  if (command === 'addmember') {
-    const ticketType = getTicketTypeForChannel(message.channel);
-    if (!ticketType) {
-      return message.reply('This command can only be used inside a ticket channel.');
-    }
-
-    const member = message.mentions.members?.first();
-    if (!member) {
-      return message.reply('Usage: `f!addmember @user`');
-    }
-
-    try {
-      await message.channel.permissionOverwrites.edit(member.id, {
-        ViewChannel: true,
-        SendMessages: true,
-        ReadMessageHistory: true,
-      });
-      await message.reply(`✅ Added ${member} to this ticket.`);
-    } catch (error) {
-      console.error(error);
-      message.reply('⚠️ Failed to add that member — check the bot has Manage Channels permission here.');
-    }
-  }
-});
-
-// Slash commands + buttons
-client.on(Events.InteractionCreate, async (interaction) => {
-  // Slash commands
-  if (interaction.isChatInputCommand()) {
-    const command = client.commands.get(interaction.commandName);
-    if (!command) return;
-
-    try {
-      await command.execute(interaction);
-    } catch (error) {
-      console.error(error);
-      const errorMessage = { content: 'There was an error running that command.', ephemeral: true };
-      if (interaction.replied || interaction.deferred) {
-        await interaction.followUp(errorMessage);
-      } else {
-        await interaction.reply(errorMessage);
-      }
-    }
-    return;
-  }
-
-  if (interaction.isStringSelectMenu()) {
-    if (interaction.customId === 'marketplace_select') {
-      const marketplaceCommand = client.commands.get('marketplace');
-      const item = marketplaceCommand?.MARKETPLACE_ITEMS.find(
-        (i) => i.value === interaction.values[0]
-      );
-
-      const replyContainer = new ContainerBuilder().addTextDisplayComponents(
-        new TextDisplayBuilder().setContent(item ? item.content : 'Category not found.')
-      );
-
-      await interaction.reply({
-        components: [replyContainer],
-        flags: MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral,
-      });
-    }
-    return;
-  }
-
-  if (!interaction.isButton()) return;
-
-  // Close ticket button — pings the opener to confirm instead of closing immediately
-  if (interaction.customId === 'close_ticket') {
-    const ticketType = getTicketTypeForChannel(interaction.channel);
-    if (!ticketType) return;
-
-    const confirmRow = new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId('close_confirm')
-        .setLabel('Yes, close it')
-        .setStyle(ButtonStyle.Danger),
-      new ButtonBuilder()
-        .setCustomId('close_cancel')
-        .setLabel('No, keep it open')
-        .setStyle(ButtonStyle.Secondary)
-    );
-
-    await interaction.reply({
-      content: `<@${ticketType.openerId}>, would you like to close this ticket?`,
-      components: [confirmRow],
-    });
-    return;
-  }
-
-  // Opener confirms the close
-  if (interaction.customId === 'close_confirm') {
-    const ticketType = getTicketTypeForChannel(interaction.channel);
-    if (!ticketType) return;
-
-    if (interaction.user.id !== ticketType.openerId) {
-      return interaction.reply({
-        content: 'Only the ticket opener can respond to this.',
-        ephemeral: true,
-      });
-    }
-
-    await interaction.reply('Closing this ticket in 5 seconds...');
-    ticketChannels.delete(interaction.channel.id);
-    setTimeout(() => {
-      interaction.channel.delete().catch(() => {});
-    }, 5000);
-    return;
-  }
-
-  // Opener declines the close
-  if (interaction.customId === 'close_cancel') {
-    const ticketType = getTicketTypeForChannel(interaction.channel);
-    if (!ticketType) return;
-
-    if (interaction.user.id !== ticketType.openerId) {
-      return interaction.reply({
-        content: 'Only the ticket opener can respond to this.',
-        ephemeral: true,
-      });
-    }
-
-    await interaction.reply('Alright, this ticket will stay open.');
-    return;
-  }
-
-  // One of the 4 ticket-open buttons
-  const ticketType = TICKET_TYPES[interaction.customId];
-  if (!ticketType) return;
-
-  if (!ticketType.roleId) {
-    return interaction.reply({
-      content: `The role for "${ticketType.label}" isn't configured yet. Ask an admin to set it up.`,
-      ephemeral: true,
-    });
-  }
-
-  if (TICKET_BANNED_USERS.has(interaction.user.id)) {
-    return interaction.reply({
-      content: 'You are not permitted to open tickets.',
-      ephemeral: true,
-    });
-  }
-
-  const existing = interaction.guild.channels.cache.find(
-    (c) => c.name === `${ticketType.prefix}-${interaction.user.username.toLowerCase()}`
-  );
-  if (existing) {
-    return interaction.reply({ content: `You already have a ticket open: ${existing}`, ephemeral: true });
-  }
-
-  const channel = await interaction.guild.channels.create({
-    name: `${ticketType.prefix}-${interaction.user.username}`,
-    type: ChannelType.GuildText,
-    parent: ticketType.categoryId || undefined,
-    permissionOverwrites: [
-      { id: interaction.guild.id, deny: [PermissionFlagsBits.ViewChannel] },
-      { id: interaction.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] },
-      { id: ticketType.roleId, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] },
-      { id: client.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages] },
-    ],
-  });
-
-  // Register this channel as a ticket by ID (plus who opened it), so it's
-  // still recognized as one even after being renamed with f!rename.
-  ticketChannels.set(channel.id, { ...ticketType, openerId: interaction.user.id });
-
-  const ticketContainer = new ContainerBuilder()
-    .setAccentColor(0x2b2d31)
-    .addTextDisplayComponents(
-      new TextDisplayBuilder().setContent(`# ${ticketType.label} Ticket`)
-    )
-    .addTextDisplayComponents(
-      new TextDisplayBuilder().setContent(
-        `Hey ${interaction.user}, welcome to your ticket! <@&${ticketType.roleId}> will be with you shortly.`
-      )
-    )
-    .addSeparatorComponents(
-      new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small)
-    )
-    .addActionRowComponents(
-      new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId('close_ticket')
-          .setLabel('Close Ticket')
-          .setStyle(ButtonStyle.Danger)
-          .setEmoji('🔒')
-      )
-    );
-
-  await channel.send({
-    components: [ticketContainer],
-    flags: MessageFlags.IsComponentsV2,
-  });
-
-  await interaction.reply({ content: `Ticket created: ${channel}`, ephemeral: true });
-});
-
-client.login(process.env.TOKEN);
+// ---------------------------------------------------------------------------
+// The dropdown selection is handled in index.js's InteractionCreate listener
+// (isStringSelectMenu branch), using the MARKETPLACE_ITEMS exported above.
+// ---------------------------------------------------------------------------
