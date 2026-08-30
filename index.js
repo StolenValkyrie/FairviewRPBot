@@ -51,14 +51,11 @@ const TICKET_BANNED_USERS = new Set([
   '1323398308562993270',
 ]);
 
-// Tracks which ticket channels have been claimed: channelId -> userId
-const claimedTickets = new Map();
-
-// Tracks which channels are tickets and what type they are: channelId -> ticketType
-// This is set once when the ticket channel is created (see the ticket-open
-// button handler below) and is what f!rename and f!addmember rely on — using
-// channel ID instead of the name prefix means renaming a ticket channel no
-// longer breaks its identification.
+// Tracks which channels are tickets and who opened them: channelId -> { ...ticketType, openerId }
+// Set once when the ticket channel is created (see the ticket-open button
+// handler below). f!rename, f!addmember, f!forceclose, and the close-confirm
+// flow all rely on this — using channel ID instead of name prefix means
+// renaming a ticket channel never breaks its identification.
 const ticketChannels = new Map();
 
 // Helper: find the ticket type config for a given channel, based on the
@@ -185,6 +182,24 @@ client.on(Events.MessageCreate, async (message) => {
     return;
   }
 
+  if (command === 'forceclose') {
+    const ticketType = getTicketTypeForChannel(message.channel);
+    if (!ticketType) {
+      return message.reply('This command can only be used inside a ticket channel.');
+    }
+
+    if (!message.member.roles.cache.has(process.env.STAFF_ROLE_ID)) {
+      return message.reply('Only staff can use this command.');
+    }
+
+    await message.reply('🔒 Force closing this ticket in 5 seconds...');
+    ticketChannels.delete(message.channel.id);
+    setTimeout(() => {
+      message.channel.delete().catch(() => {});
+    }, 5000);
+    return;
+  }
+
   if (command === 'addmember') {
     const ticketType = getTicketTypeForChannel(message.channel);
     if (!ticketType) {
@@ -252,39 +267,62 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
   if (!interaction.isButton()) return;
 
-  // Claim ticket button
-  if (interaction.customId === 'claim_ticket') {
+  // Close ticket button — pings the opener to confirm instead of closing immediately
+  if (interaction.customId === 'close_ticket') {
     const ticketType = getTicketTypeForChannel(interaction.channel);
     if (!ticketType) return;
 
-    if (!interaction.member.roles.cache.has(ticketType.roleId)) {
-      return interaction.reply({
-        content: `Only members of the ${ticketType.label} team can claim this ticket.`,
-        ephemeral: true,
-      });
-    }
+    const confirmRow = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId('close_confirm')
+        .setLabel('Yes, close it')
+        .setStyle(ButtonStyle.Danger),
+      new ButtonBuilder()
+        .setCustomId('close_cancel')
+        .setLabel('No, keep it open')
+        .setStyle(ButtonStyle.Secondary)
+    );
 
-    const existingClaim = claimedTickets.get(interaction.channel.id);
-    if (existingClaim) {
-      return interaction.reply({
-        content: `This ticket is already claimed by <@${existingClaim}>.`,
-        ephemeral: true,
-      });
-    }
-
-    claimedTickets.set(interaction.channel.id, interaction.user.id);
-    await interaction.reply(`✋ Ticket claimed by ${interaction.user}.`);
+    await interaction.reply({
+      content: `<@${ticketType.openerId}>, would you like to close this ticket?`,
+      components: [confirmRow],
+    });
     return;
   }
 
-  // Close ticket button
-  if (interaction.customId === 'close_ticket') {
+  // Opener confirms the close
+  if (interaction.customId === 'close_confirm') {
+    const ticketType = getTicketTypeForChannel(interaction.channel);
+    if (!ticketType) return;
+
+    if (interaction.user.id !== ticketType.openerId) {
+      return interaction.reply({
+        content: 'Only the ticket opener can respond to this.',
+        ephemeral: true,
+      });
+    }
+
     await interaction.reply('Closing this ticket in 5 seconds...');
-    claimedTickets.delete(interaction.channel.id);
     ticketChannels.delete(interaction.channel.id);
     setTimeout(() => {
       interaction.channel.delete().catch(() => {});
     }, 5000);
+    return;
+  }
+
+  // Opener declines the close
+  if (interaction.customId === 'close_cancel') {
+    const ticketType = getTicketTypeForChannel(interaction.channel);
+    if (!ticketType) return;
+
+    if (interaction.user.id !== ticketType.openerId) {
+      return interaction.reply({
+        content: 'Only the ticket opener can respond to this.',
+        ephemeral: true,
+      });
+    }
+
+    await interaction.reply('Alright, this ticket will stay open.');
     return;
   }
 
@@ -325,9 +363,9 @@ client.on(Events.InteractionCreate, async (interaction) => {
     ],
   });
 
-  // Register this channel as a ticket by ID, so it's still recognized as
-  // one even after being renamed with f!rename.
-  ticketChannels.set(channel.id, ticketType);
+  // Register this channel as a ticket by ID (plus who opened it), so it's
+  // still recognized as one even after being renamed with f!rename.
+  ticketChannels.set(channel.id, { ...ticketType, openerId: interaction.user.id });
 
   const ticketContainer = new ContainerBuilder()
     .setAccentColor(0x2b2d31)
@@ -344,11 +382,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
     )
     .addActionRowComponents(
       new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId('claim_ticket')
-          .setLabel('Claim Ticket')
-          .setStyle(ButtonStyle.Success)
-          .setEmoji('✋'),
         new ButtonBuilder()
           .setCustomId('close_ticket')
           .setLabel('Close Ticket')
