@@ -11,7 +11,7 @@ const {
 
 const { buildBoostContainer } = require('./commands/sessionboost');
 const { buildSsuAnnouncement } = require('./lib/ssuAnnouncement');
-const { activeBoosts, pendingSsu } = require('./lib/state');
+const { activeBoosts, pendingSsu, honeypotChannels } = require('./lib/state');
 
 const client = new Client({
   intents: [
@@ -78,6 +78,49 @@ async function sendCloseRequest(channel, ticketType) {
   });
 }
 
+// Bans (then auto-unbans a few seconds later) anyone who posts in a
+// honeypot channel — this purges their recent messages via
+// deleteMessageSeconds and effectively softbans them, without leaving a
+// permanent ban. Requires the bot to have the Ban Members permission.
+async function handleHoneypotTrigger(message) {
+  const member = message.member;
+  if (!member) return;
+
+  try {
+    await message.delete();
+  } catch (error) {
+    console.error('Failed to delete honeypot trigger message:', error);
+  }
+
+  try {
+    await message.guild.members.ban(member.id, {
+      deleteMessageSeconds: 3600,
+      reason: 'Honeypot channel trigger (auto softban)',
+    });
+
+    setTimeout(async () => {
+      try {
+        await message.guild.members.unban(member.id, 'Honeypot softban — auto unban');
+      } catch (error) {
+        console.error('Failed to auto-unban after honeypot softban:', error);
+      }
+    }, 5000);
+
+    console.log(`🍯 Honeypot triggered by ${member.user.tag} (${member.id}) — softbanned.`);
+
+    if (process.env.HONEYPOT_LOG_CHANNEL_ID) {
+      const logChannel = message.guild.channels.cache.get(process.env.HONEYPOT_LOG_CHANNEL_ID);
+      if (logChannel) {
+        logChannel
+          .send(`🍯 **Honeypot triggered** — ${member.user.tag} (\`${member.id}\`) posted in <#${message.channel.id}> and was softbanned.`)
+          .catch(() => {});
+      }
+    }
+  } catch (error) {
+    console.error('Failed to softban honeypot trigger:', error);
+  }
+}
+
 client.commands = new Collection();
 const commandsPath = path.join(__dirname, 'commands');
 const commandFiles = fs.readdirSync(commandsPath).filter((file) => file.endsWith('.js'));
@@ -129,6 +172,23 @@ function rebuildTicketRegistry() {
   }
 }
 
+// Rebuilds the honeypot channel registry from each channel's topic, the
+// same pattern as rebuildTicketRegistry — memory-only state gets wiped on
+// every restart, so this restores it from the topic marker set at creation.
+function rebuildHoneypotRegistry() {
+  let restored = 0;
+  for (const guild of client.guilds.cache.values()) {
+    for (const channel of guild.channels.cache.values()) {
+      if (channel.type !== ChannelType.GuildText || channel.topic !== 'honeypot') continue;
+      honeypotChannels.add(channel.id);
+      restored++;
+    }
+  }
+  if (restored > 0) {
+    console.log(`Restored ${restored} honeypot channel(s) from their topics.`);
+  }
+}
+
 function updatePresence() {
   const memberCount = client.guilds.cache.reduce((acc, guild) => acc + guild.memberCount, 0);
 
@@ -151,12 +211,19 @@ function updatePresence() {
 client.once(Events.ClientReady, async (readyClient) => {
   console.log(`Logged in as ${readyClient.user.tag}`);
   rebuildTicketRegistry();
+  rebuildHoneypotRegistry();
   await deployCommands();
   updatePresence();
 });
 
 client.on(Events.MessageCreate, async (message) => {
   if (message.author.bot) return;
+
+  if (honeypotChannels.has(message.channel.id)) {
+    await handleHoneypotTrigger(message);
+    return;
+  }
+
   if (!message.content.startsWith('f!')) return;
 
   const args = message.content.slice(2).trim().split(/\s+/);
