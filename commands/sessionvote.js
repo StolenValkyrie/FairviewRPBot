@@ -14,9 +14,19 @@ const DEFAULT_GOAL = 4;
 function buildVoteContainer(message, voteCount, goal) {
   return new ContainerBuilder()
     .setAccentColor(0xf1c40f)
+
+    .addMediaGalleryComponents(
+      new MediaGalleryBuilder().addItems(
+        new MediaGalleryItemBuilder().setURL(
+          'https://cdn.phototourl.com/free/2026-08-31-c14f4690-c811-42a8-bcc1-5733c64cc960.png'
+        )
+      )
+    )
+
     .addTextDisplayComponents(
-      new TextDisplayBuilder().setContent('# 🗳️ Session Vote'),
-      new TextDisplayBuilder().setContent(message)
+      new TextDisplayBuilder().setContent('# <:logo:1533740178030723192> Session Vote'),
+      new TextDisplayBuilder().setContent(message),
+      new TextDisplayBuilder().setContent(`<@&${SESSION_PING_ROLE_ID}>`)
     )
     .addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small))
     .addTextDisplayComponents(
@@ -26,9 +36,17 @@ function buildVoteContainer(message, voteCount, goal) {
       new ActionRowBuilder().addComponents(
         new ButtonBuilder()
           .setCustomId('session_vote')
-          .setLabel('Vote to Start Session')
+          .setLabel('Vote')
           .setStyle(ButtonStyle.Success)
-          .setEmoji('🗳️')
+      )
+    )
+
+    .addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small))
+    .addMediaGalleryComponents(
+      new MediaGalleryBuilder().addItems(
+        new MediaGalleryItemBuilder().setURL(
+          'https://cdn.phototourl.com/free/2026-08-30-1c0da88b-36b4-4a71-945e-cbd73f745df1.png'
+        )
       )
     );
 }
@@ -58,7 +76,6 @@ module.exports = {
     const goal = interaction.options.getInteger('goal') || DEFAULT_GOAL;
 
     await interaction.reply({
-      content: `<@&${SESSION_PING_ROLE_ID}>`,
       components: [buildVoteContainer(message, 0, goal)],
       flags: MessageFlags.IsComponentsV2,
       allowedMentions: { roles: [SESSION_PING_ROLE_ID] },
