@@ -73,7 +73,7 @@ module.exports = {
       return interaction.reply({ content: 'Only staff can use this command.', flags: MessageFlags.Ephemeral });
     }
 
-    const message = interaction.options.getString('message') || 'Vote below if you want a session to start!';
+    const message = interaction.options.getString('message') || 'The Fairview High Ranking Team have initiated a Server vote! Join the server using the code: FVRPJ';
     const goal = interaction.options.getInteger('goal') || DEFAULT_GOAL;
 
     await interaction.reply({
