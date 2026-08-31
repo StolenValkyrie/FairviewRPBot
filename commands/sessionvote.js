@@ -1,6 +1,7 @@
 const {
   SlashCommandBuilder, MessageFlags,
   ContainerBuilder, TextDisplayBuilder, SeparatorBuilder, SeparatorSpacingSize,
+  MediaGalleryBuilder, MediaGalleryItemBuilder,
   ActionRowBuilder, ButtonBuilder, ButtonStyle,
 } = require('discord.js');
 const { SESSION_PING_ROLE_ID } = require('../lib/ssuAnnouncement');
