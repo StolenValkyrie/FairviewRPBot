@@ -8,48 +8,36 @@ const { activeBoosts } = require('../lib/state');
 
 const DEFAULT_GOAL = 4;
 
-function buildBoostContainer(message, voteCount, goal, { locked = false } = {}) {
-  const container = new ContainerBuilder()
-    .setAccentColor(locked ? 0x2ecc71 : 0xf1c40f);
-
-  if (SESSION_PING_ROLE_ID) {
-    container.addTextDisplayComponents(
-      new TextDisplayBuilder().setContent(`<@&${SESSION_PING_ROLE_ID}>`)
-    );
-  }
-
-  container
+// Builds the vote-tracking card. Exported so index.js can reuse it to
+// update the vote count in place after each click, without duplicating
+// the layout in two files.
+function buildVoteContainer(message, voteCount, goal) {
+  return new ContainerBuilder()
+    .setAccentColor(0xf1c40f)
     .addTextDisplayComponents(
-      new TextDisplayBuilder().setContent('# 🚀 Session Boost'),
+      new TextDisplayBuilder().setContent('# 🗳️ Session Vote'),
       new TextDisplayBuilder().setContent(message)
     )
     .addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small))
     .addTextDisplayComponents(
-      new TextDisplayBuilder().setContent(
-        locked
-          ? `**Votes:** ${voteCount}/${goal} — Goal reached! Waiting on High Ranking confirmation.`
-          : `**Votes:** ${voteCount}/${goal}`
-      )
+      new TextDisplayBuilder().setContent(`**Votes:** ${voteCount}/${goal}`)
     )
     .addActionRowComponents(
       new ActionRowBuilder().addComponents(
         new ButtonBuilder()
-          .setCustomId('boost_vote')
-          .setLabel(locked ? 'Goal Reached' : 'Vote to Boost')
-          .setStyle(locked ? ButtonStyle.Secondary : ButtonStyle.Success)
-          .setEmoji('🚀')
-          .setDisabled(locked)
+          .setCustomId('session_vote')
+          .setLabel('Vote to Start Session')
+          .setStyle(ButtonStyle.Success)
+          .setEmoji('🗳️')
       )
     );
-
-  return container;
 }
 
 module.exports = {
-  buildBoostContainer,
+  buildVoteContainer,
   data: new SlashCommandBuilder()
-    .setName('sessionboost')
-    .setDescription('Ask everyone to vote to boost the session')
+    .setName('sessionvote')
+    .setDescription('Start a vote to begin a new session')
     .addStringOption((option) =>
       option.setName('message').setDescription('Optional custom message').setRequired(false)
     )
@@ -66,16 +54,17 @@ module.exports = {
       return interaction.reply({ content: 'Only staff can use this command.', flags: MessageFlags.Ephemeral });
     }
 
-    const message = interaction.options.getString('message') || 'We need more players — invite your friends and join now!';
+    const message = interaction.options.getString('message') || 'Vote below if you want a session to start!';
     const goal = interaction.options.getInteger('goal') || DEFAULT_GOAL;
 
     await interaction.reply({
-      components: [buildBoostContainer(message, 0, goal)],
+      content: `<@&${SESSION_PING_ROLE_ID}>`,
+      components: [buildVoteContainer(message, 0, goal)],
       flags: MessageFlags.IsComponentsV2,
-      allowedMentions: SESSION_PING_ROLE_ID ? { roles: [SESSION_PING_ROLE_ID] } : undefined,
+      allowedMentions: { roles: [SESSION_PING_ROLE_ID] },
     });
 
     const sentMessage = await interaction.fetchReply();
-    activeBoosts.set(sentMessage.id, { votes: new Set(), goal, message, triggered: false });
+    activeBoosts.set(sentMessage.id, { votes: new Set(), goal, message });
   },
 };
