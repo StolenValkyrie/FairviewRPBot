@@ -71,10 +71,13 @@ function getTicketTypeForChannel(channel) {
   return ticketChannels.get(channel.id);
 }
 
-// Helper: posts the "would you like to close this ticket?" prompt with
-// Yes/No buttons, pinging the opener. Shared by the close_ticket button and
-// f!closerequest so both trigger the exact same confirmation flow.
-async function sendCloseRequest(channel, ticketType) {
+// Tracks pending close-confirmation prompts: confirmMessageId -> { ticketType, triggerMessage }
+// triggerMessage is the f!closerequest message that started this prompt, if
+// any (button-triggered requests have no trigger message) — cancel deletes
+// both the confirm prompt and this trigger message.
+const pendingCloseRequests = new Map();
+
+async function sendCloseRequest(channel, ticketType, triggerMessage = null) {
   const confirmRow = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId('close_confirm')
@@ -86,10 +89,12 @@ async function sendCloseRequest(channel, ticketType) {
       .setStyle(ButtonStyle.Secondary)
   );
 
-  await channel.send({
+  const confirmMessage = await channel.send({
     content: `<@${ticketType.openerId}>, would you like to close this ticket?`,
     components: [confirmRow],
   });
+
+  pendingCloseRequests.set(confirmMessage.id, { ticketType, triggerMessage });
 }
 
 // Bans (then auto-unbans a few seconds later) anyone who posts in a
@@ -339,11 +344,11 @@ client.on(Events.MessageCreate, async (message) => {
       return message.reply('This command can only be used inside a ticket channel.');
     }
 
-    if (message.author.id !== ticketType.openerId) {
-      return message.reply('Only the ticket opener can request to close this ticket. Staff can use `f!forceclose` if needed.');
+    if (!message.member.roles.cache.has(process.env.STAFF_ROLE_ID)) {
+      return message.reply('Only staff can use this command.');
     }
 
-    await sendCloseRequest(message.channel, ticketType);
+    await sendCloseRequest(message.channel, ticketType, message);
     return;
   }
 
@@ -632,7 +637,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
     return;
   }
 
-  // Opener confirms the close
+   // Opener confirms the close
   if (interaction.customId === 'close_confirm') {
     const ticketType = getTicketTypeForChannel(interaction.channel);
     if (!ticketType) return;
@@ -644,6 +649,8 @@ client.on(Events.InteractionCreate, async (interaction) => {
       });
     }
 
+    pendingCloseRequests.delete(interaction.message.id);
+
     await interaction.reply('Closing this ticket in 5 seconds...');
     ticketChannels.delete(interaction.channel.id);
     claimedTickets.delete(interaction.channel.id);
@@ -653,7 +660,9 @@ client.on(Events.InteractionCreate, async (interaction) => {
     return;
   }
 
-  // Opener declines the close
+  // Opener declines the close — deletes both the close-request trigger
+  // message (if this was started via f!closerequest) and the confirm prompt
+  // itself, instead of leaving a reply behind.
   if (interaction.customId === 'close_cancel') {
     const ticketType = getTicketTypeForChannel(interaction.channel);
     if (!ticketType) return;
@@ -665,7 +674,15 @@ client.on(Events.InteractionCreate, async (interaction) => {
       });
     }
 
-    await interaction.reply('Alright, this ticket will stay open.');
+    const pending = pendingCloseRequests.get(interaction.message.id);
+    pendingCloseRequests.delete(interaction.message.id);
+
+    await interaction.deferUpdate();
+
+    if (pending?.triggerMessage) {
+      await pending.triggerMessage.delete().catch(() => {});
+    }
+    await interaction.message.delete().catch(() => {});
     return;
   }
 
