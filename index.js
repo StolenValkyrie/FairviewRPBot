@@ -165,7 +165,7 @@ async function deployCommands() {
   try {
     console.log(`Registering ${commandData.length} slash commands...`);
     await rest.put(
-      Routes.applicationCommands(process.env.CLIENT_ID),
+      Routes.applicationGuildCommands(process.env.CLIENT_ID, process.env.GUILD_ID),
       { body: commandData }
     );
     console.log('Slash commands registered successfully.');

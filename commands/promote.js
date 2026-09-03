@@ -30,6 +30,7 @@ const TOP_BANNER_URL =
 const BOTTOM_FOOTER_URL =
   'https://cdn.phototourl.com/free/2026-08-30-1c0da88b-36b4-4a71-945e-cbd73f745df1.png';
 const ACCENT_COLOR = 0x5865f2; // container side-bar color, change if you want
+const PROMOTION_CHANNEL_ID = '1526164859576651893';
 // -------------------------------------------------------------------------
 
 module.exports = {
@@ -98,12 +99,26 @@ module.exports = {
         new MediaGalleryBuilder().addItems(new MediaGalleryItemBuilder().setURL(BOTTOM_FOOTER_URL))
       );
 
-    await interaction.reply({
+    const promotionChannel = await interaction.client.channels.fetch(PROMOTION_CHANNEL_ID).catch(() => null);
+
+    if (!promotionChannel) {
+      return interaction.reply({
+        content: `Couldn't find the promotion channel (\`${PROMOTION_CHANNEL_ID}\`). Check the bot can see it and the ID is correct.`,
+        flags: MessageFlags.Ephemeral,
+      });
+    }
+
+    await promotionChannel.send({
       components: [container],
       flags: MessageFlags.IsComponentsV2,
       // Components V2 messages can't use "content" or legacy "embeds" —
       // everything has to live inside the container's components.
       allowedMentions: { users: [target.id], roles: [role.id] },
+    });
+
+    await interaction.reply({
+      content: `✅ Promotion posted in <#${PROMOTION_CHANNEL_ID}>.`,
+      flags: MessageFlags.Ephemeral,
     });
   },
 };
