@@ -21,7 +21,7 @@ const {
 } = require('discord.js');
 
 // ---- Config -----------------------------------------------------------
-const HIGH_RANKING_TEAM_ROLE_ID = 'HIGH_RANKING_TEAM';
+const HIGH_RANKING_TEAM_ROLE_ID = process.env.HIGH_RANKING_TEAM;
 const LOGO_EMOJI = '<:logo:1533740178030723192>';
 const TOP_BANNER_URL =
   'https://cdn.phototourl.com/free/2026-09-03-5dc96ab9-5ea9-4f01-b902-a5dbbdb7a24e.png';
