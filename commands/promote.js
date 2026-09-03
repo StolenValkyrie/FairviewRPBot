@@ -11,7 +11,6 @@
 
 const {
   SlashCommandBuilder,
-  PermissionFlagsBits,
   ContainerBuilder,
   TextDisplayBuilder,
   MediaGalleryBuilder,
@@ -22,7 +21,6 @@ const {
 } = require('discord.js');
 
 // ---- Config -----------------------------------------------------------
-const STAFF_ROLE_ID = 'STAFF_ROLE_ID';
 const HIGH_RANKING_TEAM_ROLE_ID = 'HIGH_RANKING_TEAM';
 const LOGO_EMOJI = '<:logo:1533740178030723192>';
 const TOP_BANNER_URL =
@@ -49,16 +47,12 @@ module.exports = {
     )
     .addRoleOption((opt) =>
       opt.setName('role').setDescription('The role/rank they are being promoted to').setRequired(true)
-    )
-    // Adjust this default gate however you like — it's a secondary layer
-    // on top of the manual role check below.
-    .setDefaultMemberPermissions(PermissionFlagsBits.ManageRoles),
+    ),
 
   async execute(interaction) {
     const member = interaction.member;
 
-    const hasPermission =
-      member.roles.cache.has(STAFF_ROLE_ID) || member.roles.cache.has(HIGH_RANKING_TEAM_ROLE_ID);
+    const hasPermission = member.roles.cache.has(HIGH_RANKING_TEAM_ROLE_ID);
 
     if (!hasPermission) {
       return interaction.reply({
