@@ -12,12 +12,14 @@ const { buildHelpContainer } = require('./lib/helpContent');
 const { buildSsuAnnouncement } = require('./lib/ssuAnnouncement');
 const { activeBoosts, pendingSsuConfirmations, honeypotChannels } = require('./lib/state');
 const { createVerificationSession, getSessionStatus } = require('./lib/docksys');
+const { initWelcomer } = require('./lib/welcomer');
 
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent,
+    GatewayIntentBits.GuildMembers,
   ],
 });
 
@@ -242,6 +244,7 @@ client.once(Events.ClientReady, async (readyClient) => {
   console.log(`Logged in as ${readyClient.user.tag}`);
   rebuildTicketRegistry();
   rebuildHoneypotRegistry();
+  initWelcomer(client);
   await deployCommands();
   updatePresence();
 });
