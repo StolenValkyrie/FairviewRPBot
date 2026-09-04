@@ -7,7 +7,7 @@ module.exports = {
     .addStringOption((option) =>
       option
         .setName('message')
-        .setDescription('What the bot should say')
+        .setDescription('What the bot should say?')
         .setRequired(true)
     ),
 

@@ -105,9 +105,10 @@ module.exports = {
     await promotionChannel.send({
       components: [container],
       flags: MessageFlags.IsComponentsV2,
-      // Components V2 messages can't use "content" or legacy "embeds" —
-      // everything has to live inside the container's components.
-      allowedMentions: { users: [target.id], roles: [role.id] },
+      // allowedMentions only allows the promoted user to be pinged —
+      // <@&roleId> still renders as a clickable role mention, it just
+      // won't notify everyone in that role.
+      allowedMentions: { users: [target.id] },
     });
 
     await interaction.reply({
